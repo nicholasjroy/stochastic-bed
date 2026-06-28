@@ -1,2 +1,3 @@
-# MSc-Dissertation
-Code used for the Location Finding and Active Causal Discovery examples in the MSc Statistical Science dissertation.
+# stochastic-bed
+
+Location finding and active causal discovery experiments for stochastic policies in Bayesian experimental design (BED). Based on code submitted for my MSc Statistical Science dissertation at Oxford (2024–25).

@@ -1,0 +1,11 @@
+[project]
+name = "stochastic-bed"
+version = "0.1.0"
+description = "Location finding and active causal discovery experiments for stochastic policies in Bayesian experimental design (BED)."
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26,<2",
+    "scipy>=1.16",
+    "torch>=2.5",
+    "matplotlib>=3.10",
+]
