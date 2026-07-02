@@ -1,7 +1,17 @@
+"""Location-finding simulator: hidden sources emit noisy signals observed with log-Gaussian noise."""
+
+from typing import NamedTuple
+
 import torch
 import torch.nn as nn
 import torch.distributions as dist
 from torch import Tensor
+
+
+class Trajectory(NamedTuple):
+    designs: Tensor                   # [*B, T, D, p]
+    outcomes: Tensor                  # [*B, T, D]
+    entropies: Tensor | None = None   # [*B, T]
 
 
 class LocationFinding(nn.Module):
@@ -35,43 +45,43 @@ class LocationFinding(nn.Module):
     def likelihood(self, theta: Tensor, designs: Tensor):
         """Outcome likelihood p(y | theta, design) as a Distribution."""
         batch_shape = theta.shape[:-1]
-        theta = theta.view(*batch_shape, self.K, self.p)
+        theta = theta.reshape(*batch_shape, self.K, self.p)
 
-        distances = torch.cdist(designs, theta)       # [*B, D, K]
-        signals = self.a / (self.m + distances**2)
+        diffs = designs.unsqueeze(-2) - theta.unsqueeze(-3)   # [*B, D, K, p]
+        sq_distances = diffs.pow(2).sum(-1)                   # [*B, D, K]
+        signals = self.a / (self.m + sq_distances)
         total_signal = signals.sum(dim=-1) + self.b   # [*B, D]
         loc = torch.log(total_signal)
-        cov = self.noise_std**2 * torch.eye(self.D, device=loc.device, dtype=loc.dtype)   # [D, D]
 
-        return dist.MultivariateNormal(loc=loc, covariance_matrix=cov)
+        return dist.Independent(dist.Normal(loc, self.noise_std), 1)
 
     def step(self, theta: Tensor, design: Tensor):
         """Sample an outcome y_t for a design given theta."""
         y_t = self.likelihood(theta, design).rsample()   # [*B, D]
         return y_t
 
-    def rollout(self, theta: Tensor, policy: nn.Module, return_entropy: bool = False):
+    def rollout(self, theta: Tensor, policy: nn.Module, return_entropy: bool = False) -> Trajectory:
         """Simulate full trajectories under a given batch of thetas and policy."""
         batch_shape = theta.shape[:-1]
-        designs  = torch.zeros(*batch_shape, self.T, self.D, self.p, device=theta.device, dtype=theta.dtype)   # [*B, T, D, p]
-        outcomes = torch.zeros(*batch_shape, self.T, self.D, device=theta.device, dtype=theta.dtype)           # [*B, T, D]
-        entropies = None
+        designs, outcomes, entropies = [], [], []
 
-        if return_entropy:
-            entropies = torch.empty(*batch_shape, self.T, device=theta.device, dtype=theta.dtype)   # [*B, T]
+        hist_designs = theta.new_zeros(*batch_shape, 0, self.D, self.p)   # [*B, 0, D, p]
+        hist_outcomes = theta.new_zeros(*batch_shape, 0, self.D)          # [*B, 0, D]
 
-        for t in range(self.T):
-            hist_designs = designs[..., :t, :, :]   # [*B, t, D, p]
-            hist_outcomes = outcomes[..., :t, :]    # [*B, t, D]
-
+        for _ in range(self.T):
             xi_t = policy(hist_designs, hist_outcomes)
             if return_entropy:
-                entropies[..., t] = policy.entropy(hist_designs, hist_outcomes)   # [*B]
+                entropies.append(policy.entropy(hist_designs, hist_outcomes))   # [*B]
 
             y_t = self.step(theta, xi_t)
 
-            designs[..., t, :, :] = xi_t
-            outcomes[..., t, :] = y_t
+            designs.append(xi_t)
+            outcomes.append(y_t)
+            hist_designs = torch.cat([hist_designs, xi_t.unsqueeze(-3)], dim=-3)
+            hist_outcomes = torch.cat([hist_outcomes, y_t.unsqueeze(-2)], dim=-2)
 
-        return designs, outcomes, entropies
-    
+        return Trajectory(
+            designs=torch.stack(designs, dim=-3),
+            outcomes=torch.stack(outcomes, dim=-2),
+            entropies=torch.stack(entropies, dim=-1) if return_entropy else None,
+        )
