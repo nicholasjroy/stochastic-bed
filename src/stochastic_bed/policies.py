@@ -12,13 +12,12 @@ class MLP(nn.Module):
     def __init__(self,
                  input_dim: int,
                  output_dim: int,
-                 hidden_dims: tuple[int, ...],
-                 activation: type[nn.Module]):
+                 hidden_dims: tuple[int, ...]):
         super().__init__()
         dims = (input_dim, *hidden_dims)
         layers = []
         for d_in, d_out in zip(dims[:-1], dims[1:]):
-            layers += [nn.Linear(d_in, d_out), activation()]
+            layers += [nn.Linear(d_in, d_out), nn.ReLU()]
         layers.append(nn.Linear(dims[-1], output_dim))
         self.net = nn.Sequential(*layers)
 
@@ -30,11 +29,10 @@ class HistoryEncoder(nn.Module):
     def __init__(self,
                  input_dim: int,
                  output_dim: int,
-                 hidden_dims: tuple[int, ...] = (256,),
-                 activation: type[nn.Module] = nn.ReLU):
+                 hidden_dims: tuple[int, ...] = (256,)):
         super().__init__()
         self.output_dim = output_dim
-        self.mlp = MLP(input_dim, output_dim, hidden_dims, activation)
+        self.mlp = MLP(input_dim, output_dim, hidden_dims)
 
     def forward(self, hist_designs, hist_outcomes):
         T = hist_designs.shape[-3]
@@ -61,8 +59,7 @@ class DeterministicPolicy(nn.Module):
                  design_bound: float,
                  enc_hidden_dims: tuple[int, ...] = (256,),
                  enc_output_dim: int = 128,
-                 hidden_dims: tuple[int, ...] = (64,),
-                 activation: type[nn.Module] = nn.ReLU):
+                 hidden_dims: tuple[int, ...] = (64,)):
         super().__init__()
         self.D = D
         self.p = p
@@ -74,7 +71,7 @@ class DeterministicPolicy(nn.Module):
             hidden_dims=enc_hidden_dims
         )
 
-        self.mlp = MLP(enc_output_dim, D*p, hidden_dims, activation)
+        self.mlp = MLP(enc_output_dim, D*p, hidden_dims)
 
     def forward(self, hist_designs, hist_outcomes):
         batch_shape = hist_designs.shape[:-3]
@@ -96,7 +93,6 @@ class StochasticPolicy(nn.Module):
                  enc_hidden_dims: tuple[int, ...] = (256,),
                  enc_output_dim: int = 128,
                  hidden_dims: tuple[int, ...] = (64,),
-                 activation: type[nn.Module] = nn.ReLU,
                  min_std: float = 0.01,
                  init_mean: float = 0.0,
                  init_std: float = 0.5):
@@ -106,12 +102,16 @@ class StochasticPolicy(nn.Module):
         self.design_bound = design_bound
         self.min_std = min_std
 
-        self.history_encoder = HistoryEncoder(input_dim=D*p + D, output_dim=enc_output_dim, hidden_dims=enc_hidden_dims)
+        self.history_encoder = HistoryEncoder(
+            input_dim=D*p + D,
+            output_dim=enc_output_dim,
+            hidden_dims=enc_hidden_dims,
+        )
 
-        self.mean_mlp = MLP(enc_output_dim, D*p, hidden_dims, activation)
+        self.mean_mlp = MLP(enc_output_dim, D*p, hidden_dims)
         nn.init.constant_(self.mean_mlp.net[-1].bias, init_mean)
 
-        self.log_std_mlp = MLP(enc_output_dim, D*p, hidden_dims, activation)
+        self.log_std_mlp = MLP(enc_output_dim, D*p, hidden_dims)
         nn.init.constant_(self.log_std_mlp.net[-1].bias, math.log(max(init_std, 1e-8)))
 
         self.tanh_transform = transforms.TanhTransform(cache_size=1)
@@ -129,11 +129,15 @@ class StochasticPolicy(nn.Module):
         log_std = log_std.view(*batch_shape, self.D, self.p)
         std = torch.exp(log_std) + self.min_std
 
-        return dist.Independent(dist.Normal(mean, std), reinterpreted_batch_ndims=2)   # Event shape: [D, p]
+        return dist.Independent(
+            dist.Normal(mean, std), reinterpreted_batch_ndims=2,
+        )   # Event shape: [D, p]
 
     def _distribution(self, hist_designs, hist_outcomes):
         base_dist = self._base_distribution(hist_designs, hist_outcomes)
-        return dist.TransformedDistribution(base_dist, [self.tanh_transform, self.scale_transform])
+        return dist.TransformedDistribution(
+            base_dist, [self.tanh_transform, self.scale_transform],
+        )
 
     def entropy(self, hist_designs, hist_outcomes, n_samples=100):
         base_dist = self._base_distribution(hist_designs, hist_outcomes)
