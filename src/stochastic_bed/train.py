@@ -107,7 +107,7 @@ def train(simulator: LocationFinding,
 
             if verbose and step % 50 == 0:
                 parts = [
-                    f"Step {step + 1}: BA loss {loss.item():.3f}",
+                    f"Step {step}: BA loss {loss.item():.3f}",
                     f"grad_norm {metrics['grad_norm'][-1]:.3f}",
                 ]
                 if hasattr(policy, "entropy"):
