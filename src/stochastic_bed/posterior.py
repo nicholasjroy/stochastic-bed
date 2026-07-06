@@ -62,6 +62,7 @@ class PosteriorNet(nn.Module):
         return self.flow.log_prob(theta, conditions=enc)   # [B]
 
     def sample(self, n_samples, designs, outcomes):
-        enc = self.history_encoder(designs, outcomes)
+        B = designs.shape[0]
+        enc = self.history_encoder(designs, outcomes)             # [B, enc_output_dim]
         enc = enc.unsqueeze(0).expand(n_samples, -1, -1)          # [n_samples, B, enc_output_dim]
-        return self.flow.sample(enc.shape[:-1], conditions=enc)   # [n_samples, B, K*p]
+        return self.flow.sample((n_samples, B), conditions=enc)   # [n_samples, B, K*p]

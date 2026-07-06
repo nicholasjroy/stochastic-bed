@@ -35,21 +35,16 @@ class HistoryEncoder(nn.Module):
         self.mlp = MLP(input_dim, output_dim, hidden_dims)
 
     def forward(self, hist_designs, hist_outcomes):
-        T = hist_designs.shape[-3]
+        B, T = hist_designs.shape[:2]
 
         if T == 0:
-            batch_shape = hist_designs.shape[:-3]
-            device = hist_designs.device
-            dtype = hist_designs.dtype
-            return torch.zeros(*batch_shape, self.output_dim, device=device, dtype=dtype)
+            return hist_designs.new_zeros(B, self.output_dim)
 
-        xi_flat = hist_designs.flatten(start_dim=-2, end_dim=-1)   # [*B, T, D*p]
-        x = torch.cat([xi_flat, hist_outcomes], dim=-1)            # [*B, T, D*p + D]
+        xi_flat = hist_designs.flatten(start_dim=2)       # [B, T, D*p]
+        x = torch.cat([xi_flat, hist_outcomes], dim=-1)   # [B, T, D*p + D]
 
-        z = self.mlp(x)       # [*B, T, output_dim]
-        out = z.sum(dim=-2)   # [*B, output_dim]
-
-        return out
+        z = self.mlp(x)      # [B, T, output_dim]
+        return z.sum(dim=1)  # [B, output_dim]
 
 
 class DeterministicPolicy(nn.Module):
@@ -74,15 +69,9 @@ class DeterministicPolicy(nn.Module):
         self.mlp = MLP(enc_output_dim, D*p, hidden_dims)
 
     def forward(self, hist_designs, hist_outcomes):
-        batch_shape = hist_designs.shape[:-3]
-
-        enc = self.history_encoder(hist_designs, hist_outcomes)
-
-        z = self.mlp(enc)   # [*B, D*p]
-        z = z.view(*batch_shape, self.D, self.p)
-        out = torch.tanh(z) * self.design_bound
-
-        return out
+        enc = self.history_encoder(hist_designs, hist_outcomes)   # [B, enc_output_dim]
+        z = self.mlp(enc).unflatten(-1, (self.D, self.p))         # [B, D, p]
+        return torch.tanh(z) * self.design_bound
 
 
 class StochasticPolicy(nn.Module):
@@ -118,15 +107,10 @@ class StochasticPolicy(nn.Module):
         self.scale_transform = transforms.AffineTransform(loc=0, scale=design_bound)
 
     def _base_distribution(self, hist_designs, hist_outcomes):
-        batch_shape = hist_designs.shape[:-3]
+        enc = self.history_encoder(hist_designs, hist_outcomes)   # [B, enc_output_dim]
 
-        enc = self.history_encoder(hist_designs, hist_outcomes)   # [*B, enc_output_dim]
-
-        mean = self.mean_mlp(enc)                        # [*B, D*p]
-        mean = mean.view(*batch_shape, self.D, self.p)   # [*B, D, p]
-
-        log_std = self.log_std_mlp(enc)
-        log_std = log_std.view(*batch_shape, self.D, self.p)
+        mean = self.mean_mlp(enc).unflatten(-1, (self.D, self.p))         # [B, D, p]
+        log_std = self.log_std_mlp(enc).unflatten(-1, (self.D, self.p))   # [B, D, p]
         std = torch.exp(log_std) + self.min_std
 
         return dist.Independent(
@@ -141,22 +125,22 @@ class StochasticPolicy(nn.Module):
 
     def entropy(self, hist_designs, hist_outcomes, n_samples=100):
         base_dist = self._base_distribution(hist_designs, hist_outcomes)
-        base_entropy = base_dist.entropy()    # [*B]
-        x = base_dist.rsample((n_samples,))   # [n_samples, *B, D, p]
+        base_entropy = base_dist.entropy()    # [B]
+        x = base_dist.rsample((n_samples,))   # [n_samples, B, D, p]
 
         y_tanh = self.tanh_transform(x)
         log_det_tanh = self.tanh_transform.log_abs_det_jacobian(x, y_tanh)
         y_final = self.scale_transform(y_tanh)
         log_det_scale = self.scale_transform.log_abs_det_jacobian(y_tanh, y_final)
 
-        total_log_det = log_det_tanh + log_det_scale      # [n_samples, *B, D, p]
-        total_log_det = total_log_det.sum(dim=[-2, -1])   # [n_samples, *B]
+        total_log_det = log_det_tanh + log_det_scale      # [n_samples, B, D, p]
+        total_log_det = total_log_det.sum(dim=[-2, -1])   # [n_samples, B]
 
         # Total entropy: H(Y) = H(X) + E[log|det J|]
         return base_entropy + total_log_det.mean(dim=0)
 
     def forward(self, hist_designs, hist_outcomes):
-        return self._distribution(hist_designs, hist_outcomes).rsample()   # [*B, D, p]
+        return self._distribution(hist_designs, hist_outcomes).rsample()   # [B, D, p]
 
 
 class RandomPolicy(nn.Module):
@@ -170,11 +154,11 @@ class RandomPolicy(nn.Module):
         self.design_bound = design_bound
 
     def forward(self, hist_designs, hist_outcomes):
-        batch_shape = hist_designs.shape[:-3]
+        B = hist_designs.shape[0]
         b = self.design_bound
-        return hist_designs.new_empty(*batch_shape, self.D, self.p).uniform_(-b, b)
-    
+        return hist_designs.new_empty(B, self.D, self.p).uniform_(-b, b)
+
     def entropy(self, hist_designs, hist_outcomes):
-        batch_shape = hist_designs.shape[:-3]
+        B = hist_designs.shape[0]
         b = self.design_bound
-        return hist_designs.new_full(batch_shape, self.D * self.p * math.log(2 * b))
+        return hist_designs.new_full((B,), self.D * self.p * math.log(2 * b))
