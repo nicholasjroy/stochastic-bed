@@ -48,7 +48,9 @@ class PosteriorNet(nn.Module):
         else:
             raise ValueError(f"Unknown flow_type: {flow_type!r}")
 
-        self.flow.build(xz_shape=(32, K*p), conditions_shape=(32, enc_output_dim))   # Batch dim (32) is arbitrary
+        self.flow.build(
+            xz_shape=(32, K*p), conditions_shape=(32, enc_output_dim),
+        )   # Batch dim (32) is arbitrary
 
     def loss(self, theta, designs, outcomes):
         """NLL for CouplingFlow, velocity regression for FlowMatching."""
