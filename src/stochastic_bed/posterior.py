@@ -16,7 +16,7 @@ class PosteriorNet(nn.Module):
         D: int,
         p: int,
         K: int,
-        enc_hidden_dims: tuple[int, ...] = (128, 128, 64),
+        enc_hidden_dims: tuple[int, ...] = (256, 256),
         enc_output_dim: int = 128,
         flow_type: str = "CouplingFlow",  # or "FlowMatching"
     ):

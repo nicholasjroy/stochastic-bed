@@ -23,7 +23,7 @@ class MLP(nn.Module):
 
 
 class HistoryEncoder(nn.Module):
-    def __init__(self, input_dim: int, output_dim: int, hidden_dims: tuple[int, ...] = (256,)):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dims: tuple[int, ...] = (256, 256)):
         super().__init__()
         self.output_dim = output_dim
         self.mlp = MLP(input_dim, output_dim, hidden_dims)
@@ -47,7 +47,7 @@ class DeterministicPolicy(nn.Module):
         D: int,
         p: int,
         design_bound: float,
-        enc_hidden_dims: tuple[int, ...] = (256,),
+        enc_hidden_dims: tuple[int, ...] = (256, 256),
         enc_output_dim: int = 128,
         hidden_dims: tuple[int, ...] = (64,),
     ):
@@ -74,7 +74,7 @@ class StochasticPolicy(nn.Module):
         D: int,
         p: int,
         design_bound: float,
-        enc_hidden_dims: tuple[int, ...] = (256,),
+        enc_hidden_dims: tuple[int, ...] = (256, 256),
         enc_output_dim: int = 128,
         hidden_dims: tuple[int, ...] = (64,),
         min_std: float = 0.01,
