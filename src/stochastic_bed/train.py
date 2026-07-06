@@ -15,18 +15,20 @@ from .posterior import PosteriorNet
 from .simulator import LocationFinding
 
 
-def train(simulator: LocationFinding,
-          policy_cls: type[nn.Module] = DeterministicPolicy,
-          posterior: PosteriorNet | None = None,
-          *,
-          design_bound: float = 3.0,
-          num_steps: int = 3000,
-          batch_size: int = 256,
-          clip_norm: float | None = 2.0,
-          alpha: float = 0.0,
-          alpha_decay: float = 1.0,
-          device: torch.device | None = None,
-          verbose: bool = True):
+def train(
+    simulator: LocationFinding,
+    policy_cls: type[nn.Module] = DeterministicPolicy,
+    posterior: PosteriorNet | None = None,
+    *,
+    design_bound: float = 3.0,
+    num_steps: int = 3000,
+    batch_size: int = 256,
+    clip_norm: float | None = 2.0,
+    alpha: float = 0.0,
+    alpha_decay: float = 1.0,
+    device: torch.device | None = None,
+    verbose: bool = True,
+):
     """Train policy and posterior jointly by minimizing the BA loss over rollouts."""
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -62,16 +64,15 @@ def train(simulator: LocationFinding,
 
     with torch.enable_grad():
         for step in range(num_steps):
-            theta = simulator.prior().sample((batch_size,)).to(device)   # [B, K*p]
+            theta = simulator.prior().sample((batch_size,)).to(device)  # [B, K*p]
             designs, outcomes = simulator.rollout(theta, policy)
 
             loss = posterior.loss(theta, designs, outcomes).mean()
 
             if hasattr(policy, "entropy"):
                 mean_entropy = sum(
-                    policy.entropy(designs[:, :t], outcomes[:, :t])
-                    for t in range(simulator.T)
-                ).mean()   # Sum over T, average over batch
+                    policy.entropy(designs[:, :t], outcomes[:, :t]) for t in range(simulator.T)
+                ).mean()  # Sum over T, average over batch
             else:
                 mean_entropy = torch.tensor(0.0, device=device)
 
@@ -82,16 +83,14 @@ def train(simulator: LocationFinding,
 
             if clip_norm is not None:
                 grad_norm = torch.nn.utils.clip_grad_norm_(
-                    trainable.parameters(), clip_norm,
+                    trainable.parameters(),
+                    clip_norm,
                 )
             else:
                 sq_grad_sums = [
-                    p.grad.pow(2).sum()
-                    for p in trainable.parameters() if p.grad is not None
+                    p.grad.pow(2).sum() for p in trainable.parameters() if p.grad is not None
                 ]
-                grad_norm = torch.sqrt(
-                    sum(sq_grad_sums, torch.tensor(0.0, device=device))
-                )
+                grad_norm = torch.sqrt(sum(sq_grad_sums, torch.tensor(0.0, device=device)))
 
             optimizer.step()
             scheduler.step()
@@ -135,11 +134,13 @@ def main():
     parser.add_argument("--alpha", type=float, default=0.0)
     args = parser.parse_args()
 
-    policy, posterior, metrics = train(LocationFinding(),
-                                       policy_classes[args.policy],
-                                       num_steps=args.num_steps,
-                                       batch_size=args.batch_size,
-                                       alpha=args.alpha)
+    policy, posterior, metrics = train(
+        LocationFinding(),
+        policy_classes[args.policy],
+        num_steps=args.num_steps,
+        batch_size=args.batch_size,
+        alpha=args.alpha,
+    )
 
     run_dir = Path("runs") / f"{datetime.now():%Y-%m-%d_%H%M%S}_{args.policy}"
     run_dir.mkdir(parents=True)

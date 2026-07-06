@@ -9,21 +9,22 @@ from torch import Tensor
 
 
 class Trajectory(NamedTuple):
-    designs: Tensor    # [B, T, D, p]
-    outcomes: Tensor   # [B, T, D]
+    designs: Tensor  # [B, T, D, p]
+    outcomes: Tensor  # [B, T, D]
 
 
 class LocationFinding(nn.Module):
-    def __init__(self,
-            p: int = 2,                    # Number of coordinate dimensions
-            K: int = 1,                    # Number of sources
-            D: int = 1,                    # Number of sensors each time period
-            T: int = 7,                    # Number of time periods
-            a: float = 1.0,                # Source signal weight
-            b: float = 0.1,                # Background signal weight
-            m: float = 0.001,              # Min squared distance to a source
-            noise_std: float = 0.5,        # Observation noise std
-            prior_bound: float = 3.0,      # Half-width of uniform prior box
+    def __init__(
+        self,
+        p: int = 2,  # Number of coordinate dimensions
+        K: int = 1,  # Number of sources
+        D: int = 1,  # Number of sensors each time period
+        T: int = 7,  # Number of time periods
+        a: float = 1.0,  # Source signal weight
+        b: float = 0.1,  # Background signal weight
+        m: float = 0.001,  # Min squared distance to a source
+        noise_std: float = 0.5,  # Observation noise std
+        prior_bound: float = 3.0,  # Half-width of uniform prior box
     ) -> None:
         super().__init__()
 
@@ -39,23 +40,23 @@ class LocationFinding(nn.Module):
 
     def prior(self):
         base = dist.Uniform(-self.prior_bound, self.prior_bound)
-        return dist.Independent(base.expand([self.K * self.p]), 1)   # event shape: [K*p]
+        return dist.Independent(base.expand([self.K * self.p]), 1)  # event shape: [K*p]
 
     def likelihood(self, theta: Tensor, designs: Tensor):
         """Outcome likelihood p(y | theta, design) as a Distribution."""
-        theta = theta.unflatten(-1, (self.K, self.p))         # [B, K, p]
+        theta = theta.unflatten(-1, (self.K, self.p))  # [B, K, p]
 
-        diffs = designs.unsqueeze(-2) - theta.unsqueeze(-3)   # [B, D, K, p]
-        sq_distances = diffs.pow(2).sum(-1)                   # [B, D, K]
+        diffs = designs.unsqueeze(-2) - theta.unsqueeze(-3)  # [B, D, K, p]
+        sq_distances = diffs.pow(2).sum(-1)  # [B, D, K]
         signals = self.a / (self.m + sq_distances)
-        total_signal = signals.sum(dim=-1) + self.b   # [B, D]
+        total_signal = signals.sum(dim=-1) + self.b  # [B, D]
         loc = torch.log(total_signal)
 
         return dist.Independent(dist.Normal(loc, self.noise_std), 1)
 
     def step(self, theta: Tensor, design: Tensor):
         """Sample an outcome y_t for a design given theta."""
-        y_t = self.likelihood(theta, design).rsample()   # [B, D]
+        y_t = self.likelihood(theta, design).rsample()  # [B, D]
         return y_t
 
     def rollout(self, theta: Tensor, policy: nn.Module) -> Trajectory:

@@ -15,3 +15,11 @@ dependencies = [
     "bayesflow>=2.0",
     "keras>=3.0",
 ]
+
+[tool.ruff]
+line-length = 100
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.20",
+]
