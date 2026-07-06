@@ -1,4 +1,4 @@
-"""Location-finding simulator: hidden sources emit noisy signals observed with log-Gaussian noise."""
+"""Location-finding simulator: sensors observe signals with log-Gaussian noise."""
 
 from typing import NamedTuple
 
@@ -60,7 +60,9 @@ class LocationFinding(nn.Module):
         y_t = self.likelihood(theta, design).rsample()   # [*B, D]
         return y_t
 
-    def rollout(self, theta: Tensor, policy: nn.Module, return_entropy: bool = False) -> Trajectory:
+    def rollout(
+        self, theta: Tensor, policy: nn.Module, return_entropy: bool = False,
+    ) -> Trajectory:
         """Simulate full trajectories under a given batch of thetas and policy."""
         batch_shape = theta.shape[:-1]
         designs, outcomes, entropies = [], [], []
