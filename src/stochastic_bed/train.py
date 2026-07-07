@@ -1,16 +1,11 @@
 """Joint policy-posterior training loop for Barber-Agakov bound"""
 
-import argparse
 import copy
-import csv
-import json
-from datetime import datetime
-from pathlib import Path
 
 import torch
 import torch.nn as nn
 
-from .policies import DeterministicPolicy, RandomPolicy, StochasticPolicy
+from .policies import DeterministicPolicy
 from .posterior import PosteriorNet
 from .simulator import LocationFinding
 
@@ -116,43 +111,3 @@ def train(
                 print("   ".join(parts))
 
     return policy, posterior, metrics
-
-
-def main():
-    policy_classes = {
-        "deterministic": DeterministicPolicy,
-        "stochastic": StochasticPolicy,
-        "random": RandomPolicy,
-    }
-
-    parser = argparse.ArgumentParser(
-        description="Train a design policy on the location-finding problem.",
-    )
-    parser.add_argument("--policy", choices=policy_classes, default="deterministic")
-    parser.add_argument("--num-steps", type=int, default=3000)
-    parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--alpha", type=float, default=0.0)
-    args = parser.parse_args()
-
-    policy, posterior, metrics = train(
-        LocationFinding(),
-        policy_classes[args.policy],
-        num_steps=args.num_steps,
-        batch_size=args.batch_size,
-        alpha=args.alpha,
-    )
-
-    run_dir = Path("runs") / f"{datetime.now():%Y-%m-%d_%H%M%S}_{args.policy}"
-    run_dir.mkdir(parents=True)
-    (run_dir / "config.json").write_text(json.dumps(vars(args), indent=2))
-    with open(run_dir / "metrics.csv", "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(metrics.keys())
-        writer.writerows(zip(*metrics.values()))
-    torch.save(policy.state_dict(), run_dir / "policy.pt")
-    torch.save(posterior, run_dir / "posterior.pt")
-    print(f"Saved run to {run_dir}")
-
-
-if __name__ == "__main__":
-    main()
